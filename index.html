@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>DOH // ORBITAL CORE</title>
+<style>
+:root{
+  --bg-deep:#04070a;
+  --bg-panel:rgba(10,20,16,.72);
+  --bg-card:rgba(14,28,22,.66);
+  --line:rgba(57,255,138,.22);
+  --line-strong:rgba(57,255,138,.55);
+  --accent:#39ff8a;
+  --accent-dim:#1f9c56;
+  --amber:#ffb648;
+  --danger:#ff4d5e;
+  --text:#d6ffe6;
+  --text-dim:#7fbf9a;
+  --text-mute:#4e7d63;
+  --mono:ui-monospace,"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;background:var(--bg-deep);color:var(--text);
+  font-family:var(--mono);font-size:16px;line-height:1.6;
+  overflow:hidden;overscroll-behavior:none;
+  -webkit-font-smoothing:antialiased;
+}
+#wrap{position:fixed;inset:0;display:grid;place-items:center}
+canvas#field{display:block;touch-action:none}
+
+/* ---------- HUD ---------- */
+#hud{
+  position:fixed;top:0;left:0;right:0;padding:12px 16px;
+  display:flex;gap:14px;align-items:flex-start;justify-content:space-between;
+  pointer-events:none;z-index:5;
+}
+#hud .col{display:flex;flex-direction:column;gap:8px;min-width:150px}
+#hud .col.right{align-items:flex-end}
+.card{
+  background:var(--bg-card);border:1px solid var(--line);border-radius:10px;
+  padding:8px 12px;backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);
+  box-shadow:0 0 22px rgba(57,255,138,.07),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.lbl{font-size:12px;letter-spacing:.20em;text-transform:uppercase;color:var(--text-mute);line-height:1.4}
+.val{font-size:22px;font-weight:600;line-height:1.25;color:var(--text);font-variant-numeric:tabular-nums}
+.val.big{font-size:28px;color:var(--accent);text-shadow:0 0 16px rgba(57,255,138,.4)}
+.sub{font-size:12px;color:var(--text-dim);line-height:1.5}
+
+#queue{display:flex;gap:6px;align-items:center}
+.qcell{
+  width:34px;height:34px;border:1px solid var(--line);border-radius:7px;
+  background:rgba(0,0,0,.35);position:relative;overflow:hidden;
+}
+.qcell::after{content:attr(data-label);position:absolute;inset:0;display:grid;place-items:center;
+  font-size:15px;font-weight:700;letter-spacing:.04em}
+
+#holdSlot{width:46px;height:46px}
+
+#aimbar{height:6px;border-radius:3px;background:rgba(0,0,0,.45);overflow:hidden;
+  border:1px solid var(--line);margin-top:6px}
+#aimfill{height:100%;width:0%;background:var(--accent);transition:width .06s linear}
+#aimfill.warn{background:var(--amber)}
+#aimfill.crit{background:var(--danger)}
+
+#spinFlag{color:var(--text-mute)}
+#spinFlag.on{color:var(--amber);text-shadow:0 0 12px rgba(255,182,72,.5)}
+
+#footer{
+  position:fixed;left:0;right:0;bottom:0;padding:8px 16px 10px;
+  display:flex;gap:16px;justify-content:center;flex-wrap:wrap;
+  font-size:12px;letter-spacing:.06em;color:var(--text-mute);
+  pointer-events:none;z-index:5;
+}
+#footer b{color:var(--text-dim);font-weight:600}
+
+/* ---------- overlays ---------- */
+#veil{
+  position:fixed;inset:0;z-index:20;display:none;place-items:center;
+  background:radial-gradient(ellipse at center,rgba(4,10,7,.80),rgba(2,4,3,.96));
+  padding:24px;
+}
+#veil.show{display:grid}
+#panel{
+  width:min(760px,92vw);max-height:88vh;overflow:auto;
+  background:var(--bg-panel);border:1px solid var(--line-strong);border-radius:14px;
+  padding:26px 30px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 0 60px rgba(57,255,138,.10);
+}
+#panel h1{
+  margin:0 0 4px;font-size:clamp(22px,4.2vw,34px);letter-spacing:.10em;
+  color:var(--accent);text-shadow:0 0 26px rgba(57,255,138,.45);font-weight:700;
+}
+#panel h2{margin:0 0 14px;font-size:13px;letter-spacing:.30em;color:var(--text-mute);font-weight:400;text-transform:uppercase}
+#log{font-size:15px;line-height:1.75;color:var(--text-dim);min-height:190px;white-space:pre-wrap;margin:0 0 18px}
+#log .hot{color:var(--accent)}
+#log .bad{color:var(--danger)}
+#log .warn{color:var(--amber)}
+.keys{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:6px 20px;
+  font-size:13px;color:var(--text-mute);margin-bottom:20px}
+.keys div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted rgba(78,125,99,.25);padding:2px 0}
+.keys b{color:var(--text-dim);font-weight:600;white-space:nowrap}
+.prompt{font-size:15px;letter-spacing:.14em;color:var(--accent);animation:blink 1.25s steps(2,start) infinite}
+@keyframes blink{to{opacity:.25}}
+#stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:18px}
+#stats .card{text-align:left}
+@media (prefers-reduced-motion:reduce){
+  .prompt{animation:none}
+}
+@media (max-width:760px){
+  #hud{font-size:14px;padding:8px 10px;gap:8px}
+  #hud .col{min-width:104px}
+  .val{font-size:18px}.val.big{font-size:22px}
+  .qcell{width:26px;height:26px}
+  #footer{font-size:11px;gap:10px}
+  #panel{padding:20px}
+}
+</style>
+</head>
+<body>
+
+<div id="wrap"><canvas id="field"></canvas></div>
+
+<div id="hud">
+  <div class="col">
+    <div class="card">
+      <div class="lbl">Integrity</div>
+      <div class="val big" id="score">0</div>
+      <div class="sub" id="comboLine">combo 0 &middot; b2b 0</div>
+    </div>
+    <div class="card">
+      <div class="lbl">Approach</div>
+      <div class="aimbar"><div id="aimfill"></div></div>
+      <div class="sub" id="aimTxt">6.0 rings</div>
+    </div>
+  </div>
+
+  <div class="col right">
+    <div class="card">
+      <div class="lbl">Level <span id="lvl">1</span> &middot; Rings <span id="rings">0</span></div>
+      <div class="val" id="rate">1.15 r/s</div>
+      <div class="sub" id="spinFlag">core spin: OFF &nbsp;[G]</div>
+    </div>
+    <div class="card">
+      <div class="lbl">Hold &nbsp;[C]</div>
+      <div class="qcell" id="holdSlot" data-label="-"></div>
+    </div>
+    <div class="card">
+      <div class="lbl">Queue</div>
+      <div id="queue"></div>
+    </div>
+  </div>
+</div>
+
+<div id="footer">
+  <span><b>&larr; &rarr;</b> orbit</span>
+  <span><b>&uarr;</b> rotate</span>
+  <span><b>SPACE</b> rapid lock</span>
+  <span><b>&darr;</b> soft drop</span>
+  <span><b>C</b> hold</span>
+  <span><b>G</b> core spin</span>
+  <span><b>P</b> pause</span>
+  <span><b>M</b> mute</span>
+  <span><b>R</b> restart</span>
+</div>
+
+<div id="veil" class="show">
+  <div id="panel">
+    <h1 id="pTitle">DOH // ORBITAL CORE</h1>
+    <h2 id="pSub">dimension 7 has inverted</h2>
+    <div id="log"></div>
+    <div id="stats" style="display:none">
+      <div class="card"><div class="lbl">Final</div><div class="val big" id="sScore">0</div></div>
+      <div class="card"><div class="lbl">Level</div><div class="val" id="sLvl">1</div></div>
+      <div class="card"><div class="lbl">Rings</div><div class="val" id="sRings">0</div></div>
+      <div class="card"><div class="lbl">Best combo</div><div class="val" id="sCombo">0</div></div>
+    </div>
+    <div class="keys" id="keyList">
+      <div><span>Orbit piece</span><b>&larr; &rarr; / A D</b></div>
+      <div><span>Rotate shell</span><b>&uarr; / W</b></b></div>
+      <div><span>Rapid lock</span><b>SPACE</b></div>
+      <div><span>Soft drop</span><b>&darr; / S</b></div>
+      <div><span>Hold piece</span><b>C / SHIFT</b></div>
+      <div><span>Core spin on/off</span><b>G</b></div>
+      <div><span>Pause</span><b>P / ESC</b></div>
+      <div><span>Mute</span><b>M</b></div>
+    </div>
+    <div class="prompt" id="pPrompt">[ PRESS ENTER TO JACK IN ]</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   DOH // ORBITAL CORE
+   Circular Tetris on a polar lattice. Single file. No dependencies.
+   Mechanics: Tetris Guideline (SRS, 7-bag, move-reset lock down) mapped
+   onto a 16-lane x 6-ring polar matrix around a dimension-warping core.
+   ===================================================================== */
+
+/* ---------------------------- CONSTANTS ---------------------------- */
+const LANES      = 16;                 // angular sectors
+const RINGS      = 12;                 // radial depth (ring 0 hugs the core)
+const SECTOR     = (Math.PI * 2) / LANES;
+const CORE_R     = 76;                 // px, core disc radius
+const RING_W     = 40;                 // px per ring
+const FIELD_R    = CORE_R + RINGS * RING_W;
+const MARGIN     = 34;
+
+const LOCK_DELAY_MS  = 500;            // Guideline: 0.5 s after landing
+const MOVE_RESET_CAP = 15;             // Guideline move-reset limit
+const ROT_MS         = 90;             // rotation input cooldown
+const ROT_QUEUE_MAX  = 2;              // rotations buffered during cooldown
+const LOCK_MS        = 130;            // rapid-lock slam duration
+const SOFT_RATE      = 9.0;            // rings per second on soft drop
+const ARE_MS         = 100;            // guideline ARE 6 frames @60
+const APPROACH_BASE  = 2.30;           // rings per second, level 1 (see note)
+const APPROACH_STEP  = 0.18;           // rings per second added per level
+/* APPROACH_BASE is set so a shell crosses the matrix in ~5 s at any RINGS
+   depth: 12 rings / 2.30 = 5.2 s. If you deepen the matrix again, divide the
+   new RINGS by 5.2 to keep the same traverse time, or the approach stalls. */
+const SPIN_RATE      = 0.40;           // rad/s of the DOH core
+const SHOCK_MS       = 260;
+/* Core purge depth. A ring is only completable if every hole in it is still
+   reachable; once the stack buries holes under other rings they are gone
+   forever and a whole-ring-only rule can never clear them. When the stack
+   reaches this depth the core burns the innermost occupied ring instead.
+   This is the Garbage Line idea from guideline Tetris, and without it the
+   game is provably unwinnable at 16 lanes. */
+const PURGE_DEPTH    = 9;              // rings deep before the core intervenes
+
+/* Tetris Guideline piece colours */
+const COLOURS = {
+  I:"#5ad7ff", J:"#2f6bff", L:"#ff9a3c", O:"#ffd83d",
+  S:"#4fe06a", Z:"#ff4d5e", T:"#e05cff"
+};
+const LETTER = { I:"I", J:"J", L:"L", O:"O", S:"S", Z:"Z", T:"T" };
+const NAMES  = [ "I","J","L","O","S","Z","T" ];
+
+/* Base spawn orientations, [laneOffset, ringOffset] with ring 0 innermost */
+const BASE = {
+  I:[[0,1],[1,1],[2,1],[3,1]],
+  J:[[0,0],[0,1],[0,2],[1,2]],
+  L:[[2,0],[0,1],[1,1],[2,1]],
+  O:[[1,0],[2,0],[1,1],[2,1]],
+  S:[[1,0],[2,0],[0,1],[1,1]],
+  T:[[0,0],[1,0],[2,0],[1,1]],
+  Z:[[0,0],[1,0],[1,1],[2,1]]
+};
+/* Deterministic kick offsets, tried in order when a rotation does not fit */
+const KICKS = [[0,0],[1,0],[-1,0],[0,-1],[0,1],[1,-1],[-1,1],[1,1],[-1,-1]];
+
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------------------------- UTILITY ---------------------------- */
+function mod(n, m){ return ((n % m) + m) % m; }
+function clamp(v, a, b){ return v < a ? a : v > b ? b : v; }
+function lerp(a, b, t){ return a + (b - a) * t; }
+function ringInner(r){ return CORE_R + r * RING_W; }
+function ringOuter(r){ return CORE_R + (r + 1) * RING_W; }
+function laneAngle(l){ return l * SECTOR - Math.PI / 2; }   // lane 0 sits at 12 o'clock
+function normCells(cells){
+  let mc = Infinity, mr = Infinity;
+  for (const c of cells){ if (c[0] < mc) mc = c[0]; if (c[1] < mr) mr = c[1]; }
+  return cells.map(c => [c[0] - mc, c[1] - mr]);
+}
+function rotCells(cells){
+  let maxR = 0;
+  for (const c of cells) if (c[1] > maxR) maxR = c[1];
+  return normCells(cells.map(c => [maxR - c[1], c[0]]));
+}
+/* Precompute the four orientations of every tetromino */
+const SHAPES = {};
+for (const n of NAMES){
+  const states = [BASE[n].map(c => c.slice())];
+  for (let i = 1; i < 4; i++) states.push(rotCells(states[i - 1]));
+  SHAPES[n] = states;
+}
+
+/* ---------------------------- AUDIO ---------------------------- */
+const Audio_ = {
+  ctx:null, master:null, muted:false,
+  ensure:function(){
+    if (this.ctx) { if (this.ctx.state === "suspended") this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = this.muted ? 0 : 0.30;
+    this.master.connect(this.ctx.destination);
+  },
+  setMuted:function(m){
+    this.muted = m;
+    if (this.master) this.master.gain.setTargetAtTime(m ? 0 : 0.30, this.ctx.currentTime, 0.02);
+  },
+  tone:function(freq, dur, type, vol, slideTo){
+    if (!this.ctx || this.muted) return;
+    const t = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const g   = this.ctx.createGain();
+    osc.type = type || "sine";
+    osc.frequency.setValueAtTime(freq, t);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol || 0.2), t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    osc.connect(g); g.connect(this.master);
+    osc.start(t); osc.stop(t + dur + 0.03);
+  },
+  lock:function(){ this.tone(150, 0.10, "square", 0.16, 70); },
+  slam:function(){ this.tone(95, 0.20, "sawtooth", 0.22, 38); },
+  orbit:function(){ this.tone(880, 0.035, "sine", 0.05); },
+  rot:function(){ this.tone(1180, 0.045, "triangle", 0.07); },
+  clear:function(n){
+    if (!this.ctx || this.muted) return;
+    const root = 392;                                   // G4
+    const steps = [0, 4, 7, 12, 16];
+    for (let i = 0; i < Math.min(n + 1, steps.length); i++){
+      const f = root * Math.pow(2, steps[i] / 12);
+      setTimeout(() => this.tone(f, 0.20, "square", 0.13), i * 62);
+    }
+  },
+  level:function(){
+    if (!this.ctx || this.muted) return;
+    [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => this.tone(f, 0.18, "triangle", 0.14), i * 80));
+  },
+  over:function(){
+    if (!this.ctx || this.muted) return;
+    [392, 330, 262, 196].forEach((f, i) => setTimeout(() => this.tone(f, 0.42, "sawtooth", 0.16, f * 0.5), i * 165));
+  }
+};
+
+/* ---------------------------- DOM ---------------------------- */
+const $ = function(id){ return document.getElementById(id); };
+const cvs = $("field");
+const ctx = cvs.getContext("2d");
+const el = {
+  score:$("score"), combo:$("comboLine"), lvl:$("lvl"), rings:$("rings"), rate:$("rate"),
+  spin:$("spinFlag"), aimFill:$("aimfill"), aimTxt:$("aimTxt"),
+  hold:$("holdSlot"), queue:$("queue"),
+  veil:$("veil"), title:$("pTitle"), sub:$("pSub"), log:$("log"),
+  stats:$("stats"), prompt:$("pPrompt"), keys:$("keyList")
+};
+
+const qcells = [];
+for (let i = 0; i < 3; i++){
+  const d = document.createElement("div");
+  d.className = "qcell"; d.dataset.label = "";
+  el.queue.appendChild(d); qcells.push(d);
+}
+
+/* ---------------------------- STATE ---------------------------- */
+/* Function declarations hoist, so blankGrid() below is callable here even
+   though the source order puts it after the game object. */
+const game = {
+  mode:"title",              // title | play | pause | over
+  /* Initialised up front, not in startRun(): the render loop runs behind the
+     title screen, so a null grid threw on the very first frame. */
+  grid: blankGrid(),
+  active:null,
+  queue:[],
+  hold:null,
+  holdUsed:false,
+  bag:[],
+  coreAngle:0,
+  spinOn:false,
+  score:0, level:1, rings:0, combo:0, bestCombo:0, b2b:0,
+  moveResets:0,
+  rotTimer:0, rotQueue:0,
+  lockTimer:0, lockFrom:0, lockTo:0, slamming:false, lockSteps:0,
+  approachAcc:0,
+  softDrop:false,
+  nextId:0,
+  shake:0,
+  parts:[],
+  storyIdx:0,
+  levelMsg:"",
+  levelMsgT:0,
+  newBest:false
+};
+let best = 0;
+try { best = parseInt(localStorage.getItem("doh.core.best") || "0", 10) || 0; } catch (e){ best = 0; }
+
+function blankGrid(){
+  const g = [];
+  for (let r = 0; r < RINGS; r++) g.push(new Array(LANES).fill(null));
+  return g;
+}
+
+/* The core's rotation expressed in whole lanes, used to convert between
+   world space (falling piece) and core-local space (locked stack). */
+function coreSteps(){
+  return mod(Math.round(game.coreAngle / SECTOR), LANES);
+}
+
+/* ---------------------------- PIECES ---------------------------- */
+function refillBag(){
+  const b = NAMES.slice();
+  for (let i = b.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = b[i]; b[i] = b[j]; b[j] = t;
+  }
+  game.bag = b;
+}
+function drawPiece(){
+  if (!game.bag.length) refillBag();
+  return game.bag.pop();
+}
+/* Lookahead queue: shifting here is what keeps the HUD preview honest,
+   otherwise the preview never advances while pieces come off the bag. */
+const QUEUE_LEN = 5;
+function queueFill(){
+  while (game.queue.length < QUEUE_LEN) game.queue.push(drawPiece());
+}
+function queueTake(){
+  queueFill();
+  const n = game.queue.shift();
+  game.queue.push(drawPiece());
+  return n;
+}
+function makePiece(name){
+  const cells = SHAPES[name][0].map(c => c.slice());
+  let maxR = 0;
+  for (const c of cells) if (c[1] > maxR) maxR = c[1];
+  return {
+    name:name, rot:0, cells:cells,
+    lane:0, ring:RINGS - 1 - maxR,
+    id:++game.nextId
+  };
+}
+function cellsAt(p, rot, lane, ring){
+  const cs = SHAPES[p.name][rot];
+  const out = [];
+  for (const c of cs) out.push([(lane + c[0]) % LANES, ring + c[1]]);
+  return out;
+}
+/* Collision test in core-local space */
+function fits(p, rot, lane, ring, steps){
+  const cs = SHAPES[p.name][rot];
+  for (const c of cs){
+    const r = ring + c[1];
+    if (r < 0 || r >= RINGS) return false;
+    const l = mod(lane + c[0] - steps, LANES);
+    if (game.grid[r][l] !== null) return false;
+  }
+  return true;
+}
+/* Lowest resting ring for the piece at this lane/orientation.
+   A plain drop stops the moment the ring below is blocked anywhere under the
+   piece, which strands pockets: a one-cell gap beside a taller column can never
+   be filled again, because nothing can ever slide sideways into it. So after
+   the piece comes to rest, probe one line deeper: if the whole piece fits
+   there, sink it. That single extra ring is what lets a stack knit together
+   and actually finish rings instead of hoarding permanent holes.
+
+ `stepsOverride` pins the core frame. During a rapid lock the core keeps
+ spinning, so recomputing `rest` every frame in a live frame lets the target
+ ring drift and the piece snaps sideways on the final frame. Passing the
+ value captured at slam time makes the landing deterministic. */
+function settle(p, lane, rot, stepsOverride){
+  let r = p.ring;
+  const steps = stepsOverride === undefined ? coreSteps() : stepsOverride;
+  while (fits(p, rot, lane, r - 1, steps)) r--;
+  if (r > 0 && fits(p, rot, lane, r - 1, steps)) r--;   // sink one line deeper
+  return r;
+}
+function spawn(){
+  const p = makePiece(queueTake());
+  p.lane = 0;
+  /* Drop the spawn in from just outside the rim so the approach is always
+     visible, then seat it at the outermost ring it actually fits in. */
+  let start = RINGS - 1;
+  while (start > 0 && !fits(p, 0, 0, start, coreSteps())) start--;
+  if (!fits(p, 0, 0, start, coreSteps())){ gameOver("SPAWN VECTOR COLLIDES"); return null; }
+  p.ring = start;
+  game.active = p;
+  game.moveResets = 0;
+  game.lockTimer = 0;
+  game.lockFrom = p.ring;
+  game.slamming = false;
+  return p;
+}
+
+/* ---------------------------- ACTIONS ---------------------------- */
+function tryOrbit(dir){
+  const p = game.active;
+  if (!p) return;
+  const lane = mod(p.lane + dir, LANES);
+  if (fits(p, p.rot, lane, p.ring, coreSteps())){
+    p.lane = lane;
+    if (p.lockTimer > 0 && game.moveResets < MOVE_RESET_CAP){
+      game.lockTimer = 0; game.moveResets++;
+    }
+    Audio_.orbit();
+  }
+}
+function tryRotate(dir){
+  const p = game.active;
+  if (!p) return;
+  if (game.rotTimer > 0){
+    if (game.rotQueue < ROT_QUEUE_MAX){ game.rotQueue++; game.rotDir = dir; }
+    return;
+  }
+  const rot = mod(p.rot + dir, 4);
+  const steps = coreSteps();
+  for (const k of KICKS){
+    const lane = mod(p.lane + k[0], LANES);
+    const ring = p.ring + k[1];
+    if (fits(p, rot, lane, ring, steps)){
+      p.rot = rot; p.lane = lane; p.ring = ring;
+      game.rotTimer = ROT_MS;
+      if (game.lockTimer > 0 && game.moveResets < MOVE_RESET_CAP){
+        game.lockTimer = 0; game.moveResets++;
+      }
+      Audio_.rot();
+      return;
+    }
+  }
+  // No kick succeeded: the shell is wedged. Burn the cooldown anyway so a
+  // held rotation key cannot spin the buffer forever against solid geometry.
+  game.rotTimer = ROT_MS;
+}
+function tryHold(){
+  if (game.holdUsed || !game.active) return;
+  const cur = game.active;
+  if (game.hold){
+    game.active = makePiece(game.hold);
+    game.hold = cur.name;
+  } else {
+    game.hold = cur.name;
+    game.active = makePiece(queueTake());
+  }
+  const p = game.active;
+  p.lane = mod(cur.lane, LANES);
+  let start = RINGS - 1;
+  while (start > 0 && !fits(p, 0, p.lane, start, coreSteps())) start--;
+  if (!fits(p, 0, p.lane, start, coreSteps())){ gameOver("HOLD VECTOR COLLIDES"); return; }
+  p.ring = start;
+  game.holdUsed = true;
+  game.moveResets = 0;
+  game.lockTimer = 0;
+  game.slamming = false;
+  Audio_.rot();
+}
+function trySoft(on){ game.softDrop = on; }
+function tryRapidLock(){
+  const p = game.active;
+  if (!p || game.slamming) return;
+  game.lockFrom = p.ring;
+  /* Freeze the core frame for the whole slam. Without this the core keeps
+     turning under the piece, `rest` drifts, and the piece snaps to a different
+     ring on the final frame — the "lands then jumps" bug. Spin mode only. */
+  game.lockSteps = coreSteps();
+  game.lockTo = settle(p, p.lane, p.rot, game.lockSteps);
+  game.slamming = true;
+  game.lockTimer = 0;
+  Audio_.slam();
+}
+
+/* ---------------------------- CLEAR LOGIC ---------------------------- */
+function ringCleared(r){ for (let l = 0; l < LANES; l++) if (game.grid[r][l] === null) return false; return true; }
+function collapse(){
+  /* Count the stack BEFORE any cell is touched, otherwise the removed-cell
+     tally reads zero and the clear is silently thrown away. */
+  const before = countFilled();
+
+  /* A ring clears ONLY when all 16 lanes are filled. Partial arcs are left
+     standing on purpose: allowing them to clear kept the stack permanently
+     shallow, so a run could never lose. Difficulty here is governed by this
+     one rule, not by shrinking the field. */
+  const gone = [];
+  for (let r = 0; r < RINGS; r++) if (ringCleared(r)) gone.push(r);
+
+  for (const r of gone) for (let l = 0; l < LANES; l++) game.grid[r][l] = null;
+
+  /* Cells outward of a cleared ring slide one ring inward, so a collapse
+     physically reclaims the depth the stack was using. */
+  const ng = blankGrid();
+  for (let k = 0; k < RINGS; k++){
+    let shift = 0;
+    for (const g of gone) if (g < k) shift++;
+    const dest = k - shift;
+    if (dest < 0) continue;
+    for (let l = 0; l < LANES; l++) ng[dest][l] = game.grid[k][l];
+  }
+  game.grid = ng;
+
+  const after = countFilled();
+  if (before === after) return null;
+  return { rings:gone.length, cells: before - after };
+}
+function countFilled(){
+  let n = 0;
+  for (let r = 0; r < RINGS; r++) for (let l = 0; l < LANES; l++) if (game.grid[r][l] !== null) n++;
+  return n;
+}
+function isPerfect(){ return countFilled() === 0; }
+
+/* Innermost ring that still holds any cell, or -1. */
+function innermostOccupied(){
+  for (let r = 0; r < RINGS; r++)
+    for (let l = 0; l < LANES; l++) if (game.grid[r][l] !== null) return r;
+  return -1;
+}
+/* Outermost occupied ring + 1, i.e. how deep the stack stands. */
+function stackDepth(){
+  for (let r = RINGS - 1; r >= 0; r--)
+    for (let l = 0; l < LANES; l++) if (game.grid[r][l] !== null) return r + 1;
+  return 0;
+}
+
+/* The core burns the innermost occupied ring and everything outside it slides
+   in. It awards nothing and counts as no ring clear — it is a pressure valve,
+   not a reward. Returns the number of cells destroyed, or 0 if it did not run. */
+function corePurge(){
+  if (stackDepth() < PURGE_DEPTH) return 0;
+  const inner = innermostOccupied();
+  if (inner < 0) return 0;
+  let burned = 0;
+  for (let l = 0; l < LANES; l++) if (game.grid[inner][l] !== null) burned++;
+  const ng = blankGrid();
+  for (let k = inner + 1; k < RINGS; k++)
+    for (let l = 0; l < LANES; l++) ng[k - 1][l] = game.grid[k][l];
+  game.grid = ng;
+  return burned;
+}
+
+/* ---------------------------- LOCK ---------------------------- */
+function commit(){
+  const p = game.active;
+  if (!p) return;
+  /* Use the frozen slam frame when one exists, so the cells are written into
+     the same core-local lanes the player saw the piece settle into. Reading
+     coreSteps() live here is what made the block appear to jump on the final
+     frame of a spin-mode slam. */
+  const steps = game.lockSteps;
+  const cells = cellsAt(p, p.rot, p.lane, p.ring);
+  for (const c of cells){
+    const r = c[1];
+    const l = mod(c[0] - steps, LANES);
+    if (r < 0 || r >= RINGS) continue;
+    game.grid[r][l] = COLOURS[p.name];
+  }
+  Audio_.lock();
+  shake(SHOCK_MS * 0.5);
+  const travelled = Math.max(0, game.lockFrom - p.ring);
+
+  const res = collapse();
+  game.active = null;
+  game.slamming = false;
+  game.holdUsed = false;
+
+  if (res && res.cells > 0){
+    game.combo++;
+    if (game.combo > game.bestCombo) game.bestCombo = game.combo;
+    const fullRings = res.rings;
+    game.rings += fullRings;
+    const difficult = fullRings > 1;
+    if (difficult) game.b2b++; else if (game.b2b > 0) game.b2b = 0;
+
+    // Only complete rings clear, so the Guideline table always applies.
+    let pts = [0, 100, 300, 500, 800][Math.min(fullRings, 4)] * game.level;
+    if (difficult && game.b2b > 1) pts = Math.floor(pts * 1.5);
+    pts += 50 * game.combo * game.level;
+    pts += 2 * travelled;
+    if (isPerfect()) pts += [0, 800, 1200, 1800, 2000][Math.min(Math.max(fullRings, 1), 4)] * game.level;
+
+    game.score += pts;
+    Audio_.clear(fullRings);
+    shake(SHOCK_MS);
+    burst(p.lane, p.ring, res.cells, fullRings);
+    const label = fullRings > 1 ? fullRings + " RING  " : "RING  ";
+    popup(p.lane, p.ring, label + "+" + pts);
+    if (isPerfect()) popup(p.lane, p.ring, "PERFECT COLLAPSE");
+
+    /* One ring per level, not per four. With only whole-ring clears this is
+       the natural ramp; at 4 it took far too long to feel any progression. */
+    const nl = 1 + game.rings;
+    if (nl > game.level){ game.level = nl; Audio_.level(); game.levelMsg = "CORE RESONANCE  L" + game.level; game.levelMsgT = 1900; }
+  } else {
+    game.combo = 0;
+  }
+
+  /* Breach test first. The core purge below must never rescue a run that has
+     already topped out — check the boundary while the stack still stands. */
+  for (let l = 0; l < LANES; l++){
+    if (game.grid[RINGS - 1][l] !== null){ gameOver("BOUNDARY BREACH"); return; }
+  }
+
+  /* Pressure valve: if the stack has buried itself, the core burns the
+     innermost ring so the run stays recoverable. Never scores, never counts
+     as a ring clear, and breaks the combo — it is a cost, not a rescue. */
+  const burned = corePurge();
+  if (burned > 0){
+    game.combo = 0;
+    if (game.b2b > 0) game.b2b = 0;
+    shake(SHOCK_MS * 2);
+    Audio_.lock();
+    popup(p.lane, Math.max(0, p.ring - 2), "CORE PURGE  -" + burned);
+  }
+
+  setTimeout(() => { if (game.mode === "play") spawn(); }, ARE_MS);
+}
+function gameOver(reason){
+  game.mode = "over";
+  game.reason = reason;
+  Audio_.over();
+  if (game.score > best){
+    best = game.score;
+    game.newBest = true;
+    try { localStorage.setItem("doh.core.best", String(best)); } catch (e){}
+  }
+  showOver();
+}
+
+/* ---------------------------- FX ---------------------------- */
+function shake(ms){ if (!REDUCED) game.shake = Math.max(game.shake, ms); }
+function burst(lane, ring, count, rings){
+  if (REDUCED) return;
+  const a = laneAngle(lane) + (game.spinOn ? game.coreAngle : 0);
+  const r = (ringInner(ring) + ringOuter(ring)) / 2;
+  for (let i = 0; i < Math.min(count * 2, 90); i++){
+    const ang = a + (Math.random() - 0.5) * SECTOR * 3;
+    const spd = 40 + Math.random() * 190;
+    game.parts.push({
+      x:Math.cos(ang) * r, y:Math.sin(ang) * r,
+      vx:Math.cos(ang) * spd + (Math.random() - 0.5) * 40,
+      vy:Math.sin(ang) * spd + (Math.random() - 0.5) * 40,
+      life:1, decay:0.012 + Math.random() * 0.02,
+      hue:rings > 1 ? 150 : 100
+    });
+  }
+}
+function popup(lane, ring, text){
+  if (REDUCED) return;
+  const a = laneAngle(lane) + (game.spinOn ? game.coreAngle : 0);
+  const r = ringInner(ring) - 10;
+  game.parts.push({ text:text, x:Math.cos(a) * r, y:Math.sin(a) * r, vx:0, vy:-34, life:1, decay:0.010, pop:true });
+}
+
+/* ---------------------------- INPUT ---------------------------- */
+const keys = Object.create(null);
+const just = Object.create(null);
+const PREVENT = { ArrowLeft:1, ArrowRight:1, ArrowUp:1, ArrowDown:1, Space:1, KeyA:1, KeyD:1, KeyW:1, KeyS:1 };
+
+window.addEventListener("keydown", function(e){
+  if (PREVENT[e.code]) e.preventDefault();
+  Audio_.ensure();
+  if (!keys[e.code]) just[e.code] = true;
+  keys[e.code] = true;
+  handlePress(e.code);
+});
+window.addEventListener("keyup", function(e){ keys[e.code] = false; });
+window.addEventListener("blur", function(){ for (const k in keys) keys[k] = false; dasDir = 0; dasRate = 0; });
+
+let dasDir = 0, dasTimer = 0, arrTimer = 0, dasRate = 0;
+const DAS_MS = 167, ARR_MS = 33;
+
+function handlePress(code){
+  if (code === "KeyM"){ Audio_.setMuted(!Audio_.muted); return; }
+  if (code === "Enter" || code === "Space"){
+    if (game.mode === "title"){ startRun(); return; }
+    if (game.mode === "over"){ showTitle(); return; }
+  }
+  if (code === "KeyP" || code === "Escape"){
+    if (game.mode === "play"){ game.mode = "pause"; showPause(); }
+    else if (game.mode === "pause"){ game.mode = "play"; hideVeil(); }
+    return;
+  }
+  if (code === "KeyR"){ startRun(); return; }
+  if (game.mode !== "play") return;
+  if (code === "ArrowLeft" || code === "KeyA"){ dasDir = -1; dasTimer = 0; arrTimer = 0; dasRate = 0; tryOrbit(-1); return; }
+  if (code === "ArrowRight" || code === "KeyD"){ dasDir = 1; dasTimer = 0; arrTimer = 0; dasRate = 0; tryOrbit(1); return; }
+  if (code === "ArrowUp" || code === "KeyW"){ tryRotate(1); return; }
+  if (code === "KeyZ" || code === "ControlLeft" || code === "ControlRight"){ tryRotate(-1); return; }
+  if (code === "ArrowDown" || code === "KeyS"){ trySoft(true); return; }
+  if (code === "Space"){ tryRapidLock(); return; }
+  if (code === "KeyC" || code === "ShiftLeft" || code === "ShiftRight"){ tryHold(); return; }
+  if (code === "KeyG"){ toggleSpin(); return; }
+}
+window.addEventListener("keyup", function(e){
+  const code = e.code;
+  if (code === "ArrowLeft" || code === "KeyA"){ if (dasDir === -1){ dasDir = 0; dasRate = 0; } return; }
+  if (code === "ArrowRight" || code === "KeyD"){ if (dasDir === 1){ dasDir = 0; dasRate = 0; } return; }
+  if (code === "ArrowDown" || code === "KeyS"){ trySoft(false); }
+});
+function toggleSpin(){
+  game.spinOn = !game.spinOn;
+  el.spin.textContent = "core spin: " + (game.spinOn ? "ON" : "OFF") + "  [G]";
+  el.spin.className = game.spinOn ? "sub on" : "sub";
+  Audio_.ensure();
+  Audio_.tone(game.spinOn ? 660 : 440, 0.14, "triangle", 0.12);
+}
+
+/* Touch: left third orbits CCW, right third orbits CW, top band rotates,
+   bottom band rapid-locks. Pointer capture keeps the drag responsive. */
+cvs.addEventListener("pointerdown", function(e){
+  Audio_.ensure();
+  if (game.mode !== "play") return;
+  cvs.setPointerCapture(e.pointerId);
+  const r = cvs.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  touchAt(x, y, r.width, r.height);
+});
+function touchAt(x, y, w, h){
+  if (y < h * 0.22){ tryRotate(1); return; }
+  if (y > h * 0.80){ tryRapidLock(); return; }
+  if (x < w * 0.34){ tryOrbit(-1); return; }
+  if (x > w * 0.66){ tryOrbit(1); return; }
+  tryRapidLock();
+}
+
+/* ---------------------------- UPDATE ---------------------------- */
+let last = 0, acc = 0;
+const STEP = 1000 / 60;
+
+function approachRate(){ return APPROACH_BASE + APPROACH_STEP * (game.level - 1); }
+
+function update(dt){
+  // core spin
+  if (game.spinOn && game.mode === "play") game.coreAngle += SPIN_RATE * dt / 1000;
+
+  if (game.mode !== "play"){ updateParts(dt); return; }
+
+  // DAS / ARR orbit repeat
+  if (dasDir !== 0){
+    if (dasRate < 1){
+      dasTimer += dt;
+      if (dasTimer >= DAS_MS){ dasRate = 1; arrTimer = 0; }
+    } else {
+      arrTimer += dt;
+      while (arrTimer >= ARR_MS){ arrTimer -= ARR_MS; tryOrbit(dasDir); }
+    }
+  }
+  // rotation cooldown: buffered presses fire one at a time as the timer expires
+  if (game.rotTimer > 0){
+    game.rotTimer -= dt;
+    if (game.rotTimer <= 0 && game.rotQueue > 0){
+      game.rotQueue--;
+      game.rotTimer = 0;
+      tryRotate(game.rotDir || 1);
+      if (game.rotQueue > 0) game.rotTimer = ROT_MS;   // drain the rest on a cadence
+    }
+  }
+  if (game.levelMsgT > 0) game.levelMsgT -= dt;
+
+  const p = game.active;
+  if (!p){ updateParts(dt); return; }
+
+  /* During a slam the core frame is frozen at tryRapidLock() time, so the
+     target ring cannot drift under the piece mid-animation. Outside a slam we
+     track the live (possibly rotating) frame so contact stays accurate. */
+  const rest = game.slamming
+    ? settle(p, p.lane, p.rot, game.lockSteps)
+    : settle(p, p.lane, p.rot);
+
+  if (game.slamming){
+    // rapid lock: slam inward to contact over LOCK_MS
+    const t = 1 - game.lockTimer / LOCK_MS;
+    p.ring = Math.round(lerp(game.lockFrom, game.lockTo, t));
+    game.lockTimer += dt;
+    if (game.lockTimer >= LOCK_MS){ p.ring = game.lockTo; commit(); return; }
+  } else {
+    const rate = game.softDrop ? SOFT_RATE : approachRate();
+    game.approachAcc += rate * dt / 1000;
+    while (game.approachAcc >= 1){
+      game.approachAcc -= 1;
+      if (p.ring - 1 >= rest) p.ring--;
+      else break;
+    }
+    if (p.ring === rest){
+      game.lockTimer += dt;
+      if (game.lockTimer >= LOCK_DELAY_MS){
+        /* Resting (not slamming): commit against the live frame, which is
+           what the player is currently aiming at. */
+        game.lockSteps = coreSteps();
+        commit();
+      }
+    } else {
+      game.lockTimer = 0;
+    }
+  }
+  updateParts(dt);
+}
+
+function updateParts(dt){
+  const f = dt / 16.67;
+  for (let i = game.parts.length - 1; i >= 0; i--){
+    const q = game.parts[i];
+    q.life -= q.decay * f;
+    if (q.life <= 0){ game.parts.splice(i, 1); continue; }
+    q.x += q.vx * f; q.y += q.vy * f;
+    if (!q.pop){ q.vx *= 0.985; q.vy = q.vy * 0.985 + 0.28 * f; }
+  }
+  if (game.shake > 0) game.shake = Math.max(0, game.shake - dt);
+}
+
+/* ---------------------------- BACKGROUND (code rain) ---------------------------- */
+/* The rain is a full-screen BACKDROP, so it must be laid out in CSS-pixel
+   screen space — NOT inside the field's translate(CX,CY)+scale(SCALE) block.
+   Doing it inside that transform put the grid at the circle's centre, scaled
+   the glyphs by SCALE, and double-applied the devicePixelRatio (setTransform
+   already carries dpr, while sizeRain measured cvs.width which is dpr-scaled).
+   All three pushed most of the rain off-screen or behind the field.
+   `w`/`h` below are therefore CSS pixels, matching the caller. */
+let rain = [], rainW = 0, rainH = 0;
+
+/* The Matrix (1999) rain is large, blocky and set in half-width katakana with
+   digits — not Latin letters. Glyph size drives the whole grid, so pitch is
+   derived from it rather than hard-coded, or the columns collide. */
+const RAIN_PX   = 39;                       // 3x the original 13px
+const RAIN_FONT = "600 " + RAIN_PX + "px ui-monospace,Consolas,'DejaVu Sans Mono',monospace";
+const RAIN_PITCH = Math.round(RAIN_PX * 1.18);   // cell width/height in px
+
+const GLYPH_HALF = "ﾊﾋﾌﾍﾎｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ";
+const GLYPH_FULL = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン";
+const GLYPH_DIGIT= "0123456789";
+
+/* Half-width katakana is missing from many monospace fonts, and a missing
+   glyph renders as a tofu box, which wrecks the look. Probe per-character
+   support and fall back to full-width katakana (near-universal) before
+   settling for digits alone. */
+let glyphs = null;
+function pickGlyphs(){
+  if (glyphs) return glyphs;
+  const supported = (ch) => {
+    try { return document.fonts.check(RAIN_FONT, ch); }
+    catch (e){ return true; }               // no FontFaceSet: assume fine
+  };
+  const half = Array.from(GLYPH_HALF).filter(supported);
+  const full = Array.from(GLYPH_FULL).filter(supported);
+  const base = half.length >= 10 ? half : (full.length >= 10 ? full : []);
+  glyphs = base.concat(Array.from(GLYPH_DIGIT).filter(supported)).join("") || GLYPH_DIGIT;
+  return glyphs;
+}
+function sizeRain(w, h){
+  const cols = Math.ceil(w / RAIN_PITCH), rows = Math.ceil(h / RAIN_PITCH);
+  if (cols === rainW && rain.length) return;
+  rainW = cols; rainH = rows;
+  rain = [];
+  for (let i = 0; i < cols; i++)
+    rain.push({ y: Math.random() * -rows, sp: 0.25 + Math.random() * 0.85, len: 4 + Math.floor(Math.random() * 12) });
+}
+function drawRain(dt, w, h){
+  if (REDUCED) return;
+  sizeRain(w, h);
+  const set = pickGlyphs();
+  ctx.save();
+  ctx.font = RAIN_FONT;
+  ctx.textBaseline = "top";
+  const f = dt / 16.67;
+  for (let i = 0; i < rain.length; i++){
+    const c = rain[i];
+    c.y += c.sp * f;
+    if (c.y > rainH){ c.y = -Math.random() * 40; c.sp = 0.25 + Math.random() * 0.85; c.len = 4 + Math.floor(Math.random() * 12); }
+    const x = i * RAIN_PITCH + 2;
+    for (let k = 0; k < c.len; k++){
+      const y = c.y - k;
+      if (y < 0 || y > rainH) continue;
+      /* Coverage across the full viewport was measured as correct, but at the
+         old alphas (tail <=0.52, most glyphs ~0.1-0.3) the rain was effectively
+         invisible against #04070a — only the few bright heads read, which looks
+         like "a tiny portion of the screen". Raise the floor so the whole
+         trail is legible, and give each head a green glow so the leading edge
+         pops like the reference. */
+      const fade = 1 - k / c.len;                  // 1 at the head, 0 at the tail
+      const ch = set[(Math.random() * set.length) | 0];
+      if (k === 0){
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = "rgba(57,255,138,.9)";
+        ctx.fillStyle = "rgba(214,255,232,.98)";
+        ctx.fillText(ch, x, y * RAIN_PITCH);
+        ctx.shadowBlur = 0;
+      } else {
+        // tail: 0.16 floor keeps distant glyphs visible, fading to 0.62 at the head
+        const a = (0.16 + fade * 0.46).toFixed(3);
+        ctx.fillStyle = "rgba(57,255,138," + a + ")";
+        ctx.fillText(ch, x, y * RAIN_PITCH);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+/* ---------------------------- RENDER ---------------------------- */
+let CX = 0, CY = 0, SCALE = 1, dpr = 1;
+function resize(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const need = (FIELD_R + MARGIN) * 2;
+  SCALE = Math.min(vw / need, vh / need);
+  if (!isFinite(SCALE) || SCALE <= 0) SCALE = 1;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cvs.width = Math.floor(vw * dpr);
+  cvs.height = Math.floor(vh * dpr);
+  cvs.style.width = vw + "px";
+  cvs.style.height = vh + "px";
+  CX = vw / 2; CY = vh / 2;
+}
+window.addEventListener("resize", resize);
+
+/* Draw one cell as an annular wedge.
+   `world` selects the frame. Locked-stack cells live in CORE-LOCAL space and
+   must rotate with the core. The falling piece and its ghost live in WORLD
+   space and must NOT — rotating them makes the piece appear to land somewhere
+   other than where it actually locks, which is the classic world/core-local
+   bug. Defaults to core-local (locked stack). */
+function drawCell(lane, ring, colour, alpha, inset, world){
+  const a = laneAngle(lane) + ((!world && game.spinOn) ? game.coreAngle : 0);
+  const pad = inset === undefined ? 1.6 : inset;
+  ctx.beginPath();
+  ctx.arc(0, 0, ringOuter(ring) - pad, a - SECTOR / 2 + 0.012, a + SECTOR / 2 - 0.012, false);
+  ctx.arc(0, 0, ringInner(ring) + pad, a + SECTOR / 2 - 0.012, a - SECTOR / 2 + 0.012, true);
+  ctx.closePath();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(0, 0, ringInner(ring), 0, 0, ringOuter(ring));
+  g.addColorStop(0, colour);
+  g.addColorStop(1, shade(colour, -0.28));
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.globalAlpha = alpha * 0.5;
+  ctx.strokeStyle = "rgba(255,255,255,.30)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+function shade(hex, amt){
+  const n = parseInt(hex.slice(1), 16);
+  let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  r = clamp(Math.round(r + 255 * amt), 0, 255);
+  g = clamp(Math.round(g + 255 * amt), 0, 255);
+  b = clamp(Math.round(b + 255 * amt), 0, 255);
+  return "rgb(" + r + "," + g + "," + b + ")";
+}
+
+function render(dt){
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cvs.width, cvs.height);
+  ctx.fillStyle = "#04070a";
+  ctx.fillRect(0, 0, cvs.width, cvs.height);
+
+  // Full-screen code-rain backdrop, drawn in CSS-pixel screen space BEFORE the
+  // field transform so it covers the whole viewport at a constant glyph size.
+  drawRain(dt, cvs.width / dpr, cvs.height / dpr);
+
+  ctx.save();
+  if (game.shake > 0 && !REDUCED){
+    const m = game.shake / SHOCK_MS;
+    ctx.translate((Math.random() - 0.5) * 14 * m, (Math.random() - 0.5) * 14 * m);
+  }
+  ctx.translate(CX, CY);
+  ctx.scale(SCALE, SCALE);
+  ctx.lineJoin = "round";
+
+  // boundary
+  ctx.save();
+  ctx.strokeStyle = "rgba(57,255,138,.20)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([7, 9]);
+  ctx.beginPath(); ctx.arc(0, 0, FIELD_R + 10, 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+
+  // ring guides
+  ctx.strokeStyle = "rgba(57,255,138,.085)";
+  ctx.lineWidth = 1;
+  for (let r = 0; r <= RINGS; r++){
+    ctx.beginPath(); ctx.arc(0, 0, CORE_R + r * RING_W, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(57,255,138,.07)";
+  for (let l = 0; l < LANES; l++){
+    const a = laneAngle(l) + (game.spinOn ? game.coreAngle : 0);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * CORE_R, Math.sin(a) * CORE_R);
+    ctx.lineTo(Math.cos(a) * FIELD_R, Math.sin(a) * FIELD_R);
+    ctx.stroke();
+  }
+
+  // predicted contact ring
+  const p = game.active;
+  if (p && game.mode === "play"){
+    // While slamming, use the frozen frame so the contact ring matches the
+    // ring the piece is actually locking into (no mid-slam drift).
+    const rest = settle(p, p.lane, p.rot, game.slamming ? game.lockSteps : undefined);
+    const prox = 1 - clamp((p.ring - rest) / (RINGS - 1), 0, 1);
+    const rr = rest;
+    ctx.save();
+    ctx.strokeStyle = prox > 0.82 ? "rgba(255,77,94,.75)" : prox > 0.5 ? "rgba(255,182,72,.6)" : "rgba(57,255,138,.5)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath(); ctx.arc(0, 0, (ringInner(rr) + ringOuter(rr)) / 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    // aim guide
+    const a = laneAngle(p.lane);
+    ctx.save();
+    ctx.strokeStyle = "rgba(57,255,138,.30)";
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([3, 7]);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * CORE_R, Math.sin(a) * CORE_R);
+    ctx.lineTo(Math.cos(a) * FIELD_R, Math.sin(a) * FIELD_R);
+    ctx.stroke();
+    ctx.restore();
+
+    // ghost  (world space — passes world=true so it is not core-rotated)
+    if (!game.slamming){
+      for (const c of SHAPES[p.name][p.rot]){
+        const r = rest + c[1];
+        if (r < 0 || r >= RINGS) continue;
+        drawCell((p.lane + c[0]) % LANES, r, COLOURS[p.name], 0.16, 3.4, true);
+      }
+    }
+    // active  (world space)
+    for (const c of SHAPES[p.name][p.rot]){
+      const r = p.ring + c[1];
+      if (r < 0 || r >= RINGS) continue;
+      drawCell((p.lane + c[0]) % LANES, r, COLOURS[p.name], 1, 1.6, true);
+    }
+  }
+
+  // locked stack
+  for (let r = 0; r < RINGS; r++)
+    for (let l = 0; l < LANES; l++)
+      if (game.grid[r][l] !== null) drawCell(l, r, game.grid[r][l], 1, 1.6);
+
+  // particles
+  for (const q of game.parts){
+    if (q.pop){
+      ctx.save();
+      ctx.globalAlpha = clamp(q.life, 0, 1);
+      ctx.fillStyle = "#d6ffe6";
+      ctx.font = "600 15px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(q.text, q.x, q.y);
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.globalAlpha = clamp(q.life, 0, 1) * 0.9;
+      ctx.fillStyle = "hsl(" + q.hue + ",100%," + (45 + q.life * 30).toFixed(0) + "%)";
+      ctx.fillRect(q.x - 1.6, q.y - 1.6, 3.2, 3.2);
+      ctx.restore();
+    }
+  }
+
+  drawCore(dt);
+  ctx.restore();
+
+  if (game.levelMsgT > 0) drawBanner();
+  syncHud();
+}
+
+function drawCore(dt){
+  void dt;                       /* the pulse below is wall-clock driven */
+  const a = game.spinOn ? game.coreAngle : game.coreAngle * 0.25;
+  ctx.save();
+  const glow = ctx.createRadialGradient(0, 0, CORE_R * 0.2, 0, 0, CORE_R * 1.5);
+  glow.addColorStop(0, "rgba(57,255,138,.20)");
+  glow.addColorStop(1, "rgba(57,255,138,0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, 0, CORE_R * 1.5, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = "#061410";
+  ctx.beginPath(); ctx.arc(0, 0, CORE_R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "rgba(57,255,138,.65)";
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, CORE_R, 0, Math.PI * 2); ctx.stroke();
+
+  ctx.rotate(a);
+  ctx.strokeStyle = "rgba(57,255,138,.30)";
+  ctx.lineWidth = 1.4;
+  for (let i = 0; i < 12; i++){
+    const th = i * (Math.PI * 2 / 12);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(th) * CORE_R * 0.30, Math.sin(th) * CORE_R * 0.30);
+    ctx.lineTo(Math.cos(th) * CORE_R * 0.88, Math.sin(th) * CORE_R * 0.88);
+    ctx.stroke();
+  }
+  ctx.rotate(-a * 2.1);
+  ctx.strokeStyle = "rgba(57,255,138,.85)";
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, CORE_R * 0.52, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 420);
+  ctx.save();
+  ctx.fillStyle = "rgba(57,255,138," + (0.55 * pulse).toFixed(3) + ")";
+  ctx.font = "600 13px monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("DOH", 0, 0);
+  ctx.restore();
+}
+
+function drawBanner(){
+  ctx.save();
+  ctx.translate(CX, CY - FIELD_R * 0.42);
+  const a = clamp(game.levelMsgT / 500, 0, 1);
+  ctx.globalAlpha = a;
+  ctx.fillStyle = "rgba(4,12,8,.82)";
+  ctx.strokeStyle = "rgba(57,255,138,.5)";
+  ctx.lineWidth = 1;
+  const w = 380, h = 42;
+  ctx.beginPath(); ctx.rect(-w / 2, -h / 2, w, h); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#39ff8a";
+  ctx.font = "600 16px monospace";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(game.levelMsg, 0, 0);
+  ctx.restore();
+}
+
+/* ---------------------------- HUD SYNC ---------------------------- */
+function syncHud(){
+  el.score.textContent = game.score.toLocaleString();
+  el.combo.textContent = "combo " + game.combo + " \u00b7 b2b " + game.b2b;
+  el.lvl.textContent = game.level;
+  el.rings.textContent = game.rings;
+  el.rate.textContent = approachRate().toFixed(2) + " r/s";
+
+  const p = game.active;
+  if (p){
+    const rest = settle(p, p.lane, p.rot);
+    const d = Math.max(0, p.ring - rest);
+    const frac = clamp(1 - d / (RINGS - 1), 0, 1);
+    el.aimFill.style.width = (frac * 100).toFixed(1) + "%";
+    el.aimFill.className = frac > 0.82 ? "crit" : frac > 0.5 ? "warn" : "";
+    el.aimTxt.textContent = d <= 0 ? "IN CONTACT" : d.toFixed(1) + " rings to contact";
+  } else {
+    el.aimFill.style.width = "0%";
+    el.aimTxt.textContent = "awaiting shell";
+  }
+  el.hold.dataset.label = game.hold || "-";
+  el.hold.style.color = game.hold ? COLOURS[game.hold] : "rgba(78,125,99,.7)";
+  for (let i = 0; i < qcells.length; i++){
+    const n = game.queue[i] || game.bag[i] || "";
+    qcells[i].dataset.label = LETTER[n] || "";
+    qcells[i].style.color = n ? COLOURS[n] : "rgba(78,125,99,.45)";
+  }
+}
+
+/* ---------------------------- STORY ---------------------------- */
+const STORY = [
+  { t:"boot", lines:
+    "<span class='hot'>SIGNAL</span>  dimension 7 has inverted.\n" +
+    "A dimension-warping entity designated <span class='hot'>DOH</span> has crossed\n" +
+    "into our universe. It is spinning. It will not stop."
+  },
+  { t:"brief", lines:
+    "You command the last orbital constructor. DOH's core sits at the\n" +
+    "centre of every rift, wrapped in an unstable shell.\n" +
+    "<span class='hot'>Bind tetramino shells to the core. Collapse full rings.</span>"
+  },
+  { t:"rule", lines:
+    "Shells do not fall. They <span class='hot'>approach</span>.\n" +
+    "Orbit them with LEFT / RIGHT, rotate with UP, and press\n" +
+    "<span class='hot'>SPACE</span> to slam a shell into the gap you aimed at.\n" +
+    "Rotation costs " + ROT_MS + "ms. The approach does not wait."
+  },
+  { t:"warn", lines:
+    "If the stack reaches the outer boundary, DOH wins.\n" +
+    "Only a <span class='hot'>complete ring</span> collapses. Partial arcs stand.\n" +
+    "Press <span class='hot'>G</span> any time to make the core spin. Good luck with that."
+  }
+];
+
+let typing = null;
+function typeLog(node, text, done){
+  if (typing) clearInterval(typing);
+  node.innerHTML = "";
+  let i = 0;
+  typing = setInterval(function(){
+    i += 2;
+    node.innerHTML = text.slice(0, i);
+    if (i >= text.length){
+      clearInterval(typing); typing = null;
+      if (done) done();
+    }
+  }, 12);
+}
+function showVeil(title, sub, html, prompt, withStats){
+  el.title.textContent = title;
+  el.sub.textContent = sub;
+  el.prompt.textContent = prompt;
+  el.stats.style.display = withStats ? "grid" : "none";
+  el.keys.style.display = withStats ? "none" : "grid";
+  el.veil.classList.add("show");
+  if (html){ el.log.innerHTML = html; } else { el.log.innerHTML = ""; }
+}
+function hideVeil(){ el.veil.classList.remove("show"); if (typing){ clearInterval(typing); typing = null; } }
+
+function showTitle(){
+  game.mode = "title";
+  game.storyIdx = 0;
+  showVeil("DOH // ORBITAL CORE", "dimension 7 has inverted", "", "[ PRESS ENTER TO JACK IN ]", false);
+  typeLog(el.log, STORY[0].lines);
+  el.prompt.textContent = "[ ENTER ]  CONTINUE";
+}
+function showPause(){
+  showVeil("PAUSED", "core held in stasis",
+    "SHELL QUEUE  " + (game.queue.join(" ") || "-") +
+    "\nLEVEL  " + game.level + "   RINGS  " + game.rings + "   SCORE  " + game.score.toLocaleString(),
+    "[ P ] RESUME     [ R ] RESTART", false);
+}
+function showOver(){
+  $("sScore").textContent = game.score.toLocaleString();
+  $("sLvl").textContent = game.level;
+  $("sRings").textContent = game.rings;
+  $("sCombo").textContent = game.bestCombo;
+  showVeil("CORE BREACH", game.reason || "DOH has your angular momentum",
+    (game.newBest ? "<span class='hot'>NEW RECORD  " + best.toLocaleString() + "</span>\n\n" : "") +
+    "BEST  " + best.toLocaleString() + "\n" +
+    "The rift holds. For now.",
+    "[ ENTER ]  TITLE SCREEN     [ R ]  RETRY", true);
+}
+
+/* ---------------------------- FLOW ---------------------------- */
+function startRun(){
+  Audio_.ensure();
+  game.grid = blankGrid();
+  game.active = null;
+  game.hold = null; game.holdUsed = false;
+  game.bag = []; game.queue = [];
+  game.coreAngle = 0;
+  game.score = 0; game.level = 1; game.rings = 0;
+  game.combo = 0; game.bestCombo = 0; game.b2b = 0;
+  game.parts = []; game.shake = 0;
+  game.rotTimer = 0; game.rotQueue = 0; game.lockTimer = 0;
+  game.slamming = false; game.approachAcc = 0; game.softDrop = false;
+  game.mode = "play";
+  hideVeil();
+  queueFill();
+  spawn();
+}
+
+/* ---------------------------- LOOP ---------------------------- */
+function frame(ts){
+  if (!last) last = ts;
+  let dt = ts - last;
+  last = ts;
+  if (dt > 250) dt = 250;      // tab was backgrounded
+  acc += dt;
+  let guard = 0;
+  while (acc >= STEP && guard < 6){
+    update(STEP);
+    for (const k in just) just[k] = false;
+    acc -= STEP;
+    guard++;
+  }
+  render(dt);
+  requestAnimationFrame(frame);
+}
+
+resize();
+showTitle();
+requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>
